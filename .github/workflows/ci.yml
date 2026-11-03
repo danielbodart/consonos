@@ -72,12 +72,14 @@ jobs:
           [ "$built" = "$VERSION" ] || { echo "the binary says $built but the release is $VERSION"; exit 1; }
 
       # The plain unit is checked against a real systemd, with the binary
-      # where it expects to find it.
+      # where it expects to find it. The runner has no PipeWire, so the
+      # pipewire-pulse.service it binds to is stood in for by an empty unit.
       - name: Verify the systemd unit
         run: |
           install -D -m 755 dist/release/consonos-linux-x64 "$HOME/.local/bin/consonos"
-          mkdir -p "$HOME/.config"
+          mkdir -p "$HOME/.config/systemd/user"
           printf 'CONSONOS_SINK=sink\nCONSONOS_SPEAKER=speaker\n' > "$HOME/.config/consonos.env"
+          printf '[Service]\nExecStart=/bin/true\n' > "$HOME/.config/systemd/user/pipewire-pulse.service"
           systemd-analyze --user verify systemd/consonos.service
 
       # A re-run has the same run number and so the same version, so the
