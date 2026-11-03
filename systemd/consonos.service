@@ -1,0 +1,28 @@
+# consonos as a systemd user unit, for a machine without Nix (the flake's
+# home-manager module writes its own). Install the binary as
+# ~/.local/bin/consonos, this file as ~/.config/systemd/user/consonos.service,
+# and the sink and speaker in ~/.config/consonos.env:
+#
+#   CONSONOS_SINK=alsa_output.pci-0000_00_1f.3.iec958-stereo
+#   CONSONOS_SPEAKER=office-sonos.lan
+#
+# then `systemctl --user enable --now consonos`.
+
+[Unit]
+Description=consonos: a Sonos on the optical output that follows the PC's volume
+Documentation=https://github.com/danielbodart/consonos
+# It exits when the sound server goes, since the sink it watched may be gone,
+# and is started again with it.
+After=pipewire-pulse.service
+BindsTo=pipewire-pulse.service
+
+[Service]
+EnvironmentFile=%h/.config/consonos.env
+ExecStart=%h/.local/bin/consonos -sink ${CONSONOS_SINK} -speaker ${CONSONOS_SPEAKER}
+# Chiefly the sink not existing yet when it starts. The speaker side never
+# ends the process; it reconnects by itself.
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target pipewire-pulse.service

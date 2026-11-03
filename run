@@ -1,0 +1,84 @@
+#!/bin/sh
+# The one place consonos's build is defined, so CI runs the same commands a
+# developer does: ./run <version|check|test|build|release> [args].
+set -eu
+
+cd "$(dirname "$0")"
+
+# The variable the version is set in, at link time.
+VERSION_VAR=main.version
+
+die() {
+  echo "Error: $*" >&2
+  exit 1
+}
+
+# The version, derived from the repository rather than stored in it.
+#
+# Only the major is committed, in MAJOR (a file, so that the flake reads the
+# same one), because only the major is a decision. Minor is the commit count,
+# so it only ever goes up and names exactly one commit. Patch is the CI run
+# number, which separates two builds of the same commit - a re-run, or a
+# manual dispatch - and locally becomes a timestamp instead, so a developer
+# build sorts after CI's and is obviously not one.
+version() {
+  # Counted from HEAD, not from a branch name: on Actions the checkout is
+  # detached, and on a pull request GITHUB_REF_NAME is "123/merge".
+  if [ "$(git rev-parse --is-shallow-repository)" = true ]; then
+    die "this is a shallow clone, so the commit count is wrong and so is the version. In Actions, checkout with \`fetch-depth: 0\`."
+  fi
+  echo "$(cat MAJOR).$(git rev-list --count HEAD).${GITHUB_RUN_NUMBER:-$(date -u +%Y%m%d%H%M%S)}"
+}
+
+check() {
+  unformatted=$(gofmt -l .)
+  [ -z "$unformatted" ] || die "not gofmt'd: $unformatted"
+  go vet ./...
+}
+
+test() {
+  go test -count=1 "$@" ./...
+}
+
+# Static, so the one binary runs on any distribution, glibc or musl. The
+# version reaches it as a link-time -X rather than a generated file, so nothing
+# is written into the tree; without one it says "development", which is the
+# truth about a `go run`.
+compile() {
+  CGO_ENABLED=0 GOOS=linux GOARCH="$2" \
+    go build -trimpath -ldflags "-s -w -X $VERSION_VAR=$1" -o "$3" .
+}
+
+build() {
+  outfile=${1:-dist/consonos}
+  v=$(version)
+  compile "$v" "$(go env GOARCH)" "$outfile"
+  echo "built $outfile $v"
+}
+
+# What a GitHub release carries: a binary per architecture, the systemd user
+# unit that runs it, and their checksums, all in one directory for CI to
+# upload as they are. The names are what the README's install snippet and
+# every releases/latest/download link point at, so they stay put; x64 is Go's
+# amd64.
+release() {
+  dir=${1:-dist/release}
+  v=$(version)
+  rm -rf "$dir"
+  mkdir -p "$dir"
+  compile "$v" amd64 "$dir/consonos-linux-x64"
+  compile "$v" arm64 "$dir/consonos-linux-arm64"
+  cp systemd/consonos.service "$dir/"
+  (cd "$dir" && sha256sum consonos-linux-x64 consonos-linux-arm64 consonos.service > SHA256SUMS)
+  echo "built $dir $v"
+}
+
+command=${1:-build}
+[ $# -gt 0 ] && shift
+case $command in
+  version|check|test|build|release) "$command" "$@" ;;
+  *)
+    echo "Error: '$command' is not a command. Try: version, check, test, build, release" >&2
+    exit 2
+    ;;
+esac

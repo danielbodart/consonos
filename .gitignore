@@ -1,0 +1,9 @@
+/consonos
+dist/
+result
+result-*
+.direnv/
+.idea/
+CLAUDE.local.md
+.claude/worktrees/
+.worktrees/
