@@ -109,7 +109,7 @@ Logs go to stderr without timestamps, for journald: `journalctl --user -u conson
 
 ## Prior art
 
-[speaker-volume-bridge](https://github.com/MiguelTVMS/speaker-volume-bridge) does the same job as a Rust/Tauri tray app, over UPnP/GENA and `pactl`. consonos is the headless take: a user service, the newer WebSocket API, and the keep-awake tone.
+[speaker-volume-bridge](https://github.com/MiguelTVMS/speaker-volume-bridge) does the same job as a Rust/Tauri tray app, over UPnP/GENA and `pactl`. consonos is the headless take: a user service, the newer WebSocket API, S/PDIF locked at 100% volume (no signal degrade) and the keep-awake tone.
 
 ## Licence
 
