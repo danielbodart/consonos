@@ -1,4 +1,4 @@
-package main
+package sonos
 
 // The speaker side: the Sonos local control API, a WebSocket on port 1443
 // that the speaker advertises over mDNS (`wss=/websocket/api` in its
@@ -24,6 +24,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/danielbodart/consonos/internal/bridge"
 )
 
 const (
@@ -41,12 +43,6 @@ const (
 	readTimeout = 75 * time.Second
 	dialTimeout = 10 * time.Second
 )
-
-// Level is a volume and mute, the same pair on either side.
-type Level struct {
-	Volume int // 0..100
-	Muted  bool
-}
 
 type Speaker struct {
 	host string
@@ -70,10 +66,10 @@ func NewSpeaker(host string, root *rsa.PublicKey, log *slog.Logger) *Speaker {
 // speaker's certificate. Sonos does not publish it and speakers do not send
 // it; it was recovered from the signatures on four speakers' certificates
 // (RSA signatures s on messages m by one key all satisfy n | s^e - m, so the
-// gcd of a few is n), and verifies all of them. See docs/sonos-root.md.
+// gcd of a few is n), and verifies all of them. See docs/sonos-root.md at the top of the repository.
 //
-//go:embed sonos-root.pem
-var sonosRootPEM []byte
+//go:embed root.pem
+var RootPEM []byte
 
 // ParseRootKey reads an RSA public key in PEM (SubjectPublicKeyInfo).
 func ParseRootKey(pemBytes []byte) (*rsa.PublicKey, error) {
@@ -94,7 +90,7 @@ func ParseRootKey(pemBytes []byte) (*rsa.PublicKey, error) {
 
 // Run connects, and reconnects for as long as the process lives, calling
 // onLevel with the speaker's level on every connect and every change.
-func (s *Speaker) Run(onLevel func(Level)) {
+func (s *Speaker) Run(onLevel func(bridge.Level)) {
 	backoff := time.Second
 	for {
 		start := time.Now()
@@ -108,7 +104,7 @@ func (s *Speaker) Run(onLevel func(Level)) {
 	}
 }
 
-func (s *Speaker) session(onLevel func(Level)) error {
+func (s *Speaker) session(onLevel func(bridge.Level)) error {
 	ip, err := resolve(s.host)
 	if err != nil {
 		return err
@@ -202,10 +198,10 @@ func resolve(host string) (string, error) {
 
 // parseVolume picks the playerVolume body out of any message that has one:
 // pushed events, and replies to getVolume, look the same.
-func parseVolume(msg []byte) (Level, bool) {
+func parseVolume(msg []byte) (bridge.Level, bool) {
 	var parts []json.RawMessage
 	if err := json.Unmarshal(msg, &parts); err != nil || len(parts) != 2 {
-		return Level{}, false
+		return bridge.Level{}, false
 	}
 	var body struct {
 		Type   string `json:"_objectType"`
@@ -213,9 +209,9 @@ func parseVolume(msg []byte) (Level, bool) {
 		Muted  *bool  `json:"muted"`
 	}
 	if err := json.Unmarshal(parts[1], &body); err != nil || body.Type != "playerVolume" || body.Volume == nil || body.Muted == nil {
-		return Level{}, false
+		return bridge.Level{}, false
 	}
-	return Level{Volume: *body.Volume, Muted: *body.Muted}, true
+	return bridge.Level{Volume: *body.Volume, Muted: *body.Muted}, true
 }
 
 func (s *Speaker) SetVolume(v int) error {

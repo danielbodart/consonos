@@ -6,7 +6,7 @@ Authentication Root CA**. A speaker sends only that one certificate. The root
 is a trust anchor the Sonos apps carry built in; Sonos does not publish it.
 
 To verify a signature you need the signer's public key, not a hash of it, so
-consonos needs the root's key. `sonos-root.pem` is that key. It was recovered
+consonos needs the root's key. [`internal/sonos/root.pem`](../internal/sonos/root.pem) is that key. It was recovered
 from the speakers' own signatures.
 
 ## How
@@ -39,7 +39,7 @@ from.
 ## Provenance
 
 The key in this repository was recovered on 2026-11-03 from four speakers: a
-Ray, a One and two Play:1s, whose certificates are in [`testdata`](../testdata).
+Ray, a One and two Play:1s, whose certificates are in [`internal/sonos/testdata`](../internal/sonos/testdata).
 It is a 4096-bit modulus, it verifies all four signatures, and
 `TestRealCertificatesVerify` checks that it still does on every build.
 

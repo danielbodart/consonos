@@ -1,4 +1,4 @@
-package main
+package bridge
 
 // Keeps the sink and the speaker at one level. Whichever side last changed is
 // the one the other follows, and on (re)connecting the speaker wins: it is
@@ -12,6 +12,12 @@ package main
 import (
 	"time"
 )
+
+// Level is a volume and mute, the same pair on either side.
+type Level struct {
+	Volume int // 0..100
+	Muted  bool
+}
 
 const echoWindow = 2 * time.Second
 

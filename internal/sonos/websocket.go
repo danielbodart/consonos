@@ -1,4 +1,4 @@
-package main
+package sonos
 
 // A WebSocket client of exactly the size the Sonos needs: one connection,
 // text frames out, text frames in, pings answered. RFC 6455, client side only,

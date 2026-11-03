@@ -1,4 +1,4 @@
-package main
+package pulse
 
 // The desktop side: one sink, read and set over the PulseAudio protocol, which
 // PipeWire serves through pipewire-pulse. It is the protocol GNOME's slider,
@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"math"
 
+	"github.com/danielbodart/consonos/internal/bridge"
 	"github.com/jfreymuth/pulse/proto"
 )
 
@@ -67,6 +68,12 @@ func OpenSink(name string) (*Sink, error) {
 	return s, nil
 }
 
+// Changed signals, coalesced, whenever any sink changes.
+func (s *Sink) Changed() <-chan struct{} { return s.changed }
+
+// Closed is closed when the sound server's connection goes.
+func (s *Sink) Closed() <-chan struct{} { return s.closed }
+
 func (s *Sink) info() (*proto.GetSinkInfoReply, error) {
 	var info proto.GetSinkInfoReply
 	if err := s.c.Request(&proto.GetSinkInfo{SinkIndex: proto.Undefined, SinkName: s.name}, &info); err != nil {
@@ -76,12 +83,12 @@ func (s *Sink) info() (*proto.GetSinkInfoReply, error) {
 }
 
 // Level is the sink's volume as the percentage GNOME shows, and its mute.
-func (s *Sink) Level() (Level, error) {
+func (s *Sink) Level() (bridge.Level, error) {
 	info, err := s.info()
 	if err != nil {
-		return Level{}, err
+		return bridge.Level{}, err
 	}
-	return Level{Volume: percent(info.ChannelVolumes), Muted: info.Mute}, nil
+	return bridge.Level{Volume: percent(info.ChannelVolumes), Muted: info.Mute}, nil
 }
 
 func (s *Sink) SetVolume(v int) error {

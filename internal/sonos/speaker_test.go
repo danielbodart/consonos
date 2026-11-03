@@ -1,4 +1,4 @@
-package main
+package sonos
 
 import (
 	"bytes"
@@ -11,58 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jfreymuth/pulse/proto"
+	"github.com/danielbodart/consonos/internal/bridge"
 )
-
-func TestAcceptKey(t *testing.T) {
-	// The worked example in RFC 6455 section 1.3.
-	if got := acceptKey("dGhlIHNhbXBsZSBub25jZQ=="); got != "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=" {
-		t.Fatal(got)
-	}
-}
-
-// unmask turns a client frame into the server frame with the same payload, so
-// readFrame can read back what encodeClientFrame wrote.
-func unmask(t *testing.T, frame []byte) []byte {
-	t.Helper()
-	n := int(frame[1] & 0x7f)
-	off := 2
-	switch n {
-	case 126:
-		off = 4
-	case 127:
-		off = 10
-	}
-	mask := frame[off : off+4]
-	out := append([]byte{frame[0], frame[1] & 0x7f}, frame[2:off]...)
-	for i, b := range frame[off+4:] {
-		out = append(out, b^mask[i%4])
-	}
-	return out
-}
-
-func TestFrameRoundTrip(t *testing.T) {
-	for _, n := range []int{0, 5, 125, 126, 65535, 65536} {
-		payload := bytes.Repeat([]byte{'x'}, n)
-		frame, err := encodeClientFrame(opText, payload)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if frame[1]&0x80 == 0 {
-			t.Fatalf("%d: client frame not masked", n)
-		}
-		fin, op, got, err := readFrame(bytes.NewReader(unmask(t, frame)))
-		if err != nil || !fin || op != opText || !bytes.Equal(got, payload) {
-			t.Fatalf("%d: fin=%v op=%d len=%d err=%v", n, fin, op, len(got), err)
-		}
-	}
-}
-
-func TestReadFrameRejectsMaskedServerFrame(t *testing.T) {
-	if _, _, _, err := readFrame(bytes.NewReader([]byte{0x81, 0x80, 0, 0, 0, 0})); err == nil {
-		t.Fatal("accepted a masked frame from the server")
-	}
-}
 
 func TestParseVolume(t *testing.T) {
 	// As the Ray sends them: a pushed event and a reply to getVolume.
@@ -70,26 +20,14 @@ func TestParseVolume(t *testing.T) {
 	reply := `[{"namespace":"playerVolume:1","response":"getVolume","success":true,"type":"playerVolume","cmdId":"2"},{"_objectType":"playerVolume","volume":40,"muted":true,"fixed":false}]`
 	subscribed := `[{"namespace":"playerVolume:1","response":"subscribe","success":true,"type":"none","cmdId":"1"},{}]`
 
-	if l, ok := parseVolume([]byte(event)); !ok || l != (Level{Volume: 26}) {
+	if l, ok := parseVolume([]byte(event)); !ok || l != (bridge.Level{Volume: 26}) {
 		t.Fatalf("event: %v %v", l, ok)
 	}
-	if l, ok := parseVolume([]byte(reply)); !ok || l != (Level{Volume: 40, Muted: true}) {
+	if l, ok := parseVolume([]byte(reply)); !ok || l != (bridge.Level{Volume: 40, Muted: true}) {
 		t.Fatalf("reply: %v %v", l, ok)
 	}
 	if _, ok := parseVolume([]byte(subscribed)); ok {
 		t.Fatal("subscribe reply read as a level")
-	}
-}
-
-func TestPercentMatchesPactl(t *testing.T) {
-	for v := 0; v <= 100; v++ {
-		vol := proto.NormVolume(float64(v) / 100)
-		if got := percent(proto.ChannelVolumes{vol, vol}); got != v {
-			t.Fatalf("%d%% read back as %d", v, got)
-		}
-	}
-	if got := percent(proto.ChannelVolumes{proto.NormVolume(1.5)}); got != 100 {
-		t.Fatalf("150%% clamped to %d", got)
 	}
 }
 
@@ -109,7 +47,7 @@ func loadCert(t *testing.T, path string) *x509.Certificate {
 
 func testSpeaker(t *testing.T) *Speaker {
 	t.Helper()
-	root, err := ParseRootKey(sonosRootPEM)
+	root, err := ParseRootKey(RootPEM)
 	if err != nil {
 		t.Fatal(err)
 	}

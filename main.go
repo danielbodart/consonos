@@ -12,6 +12,10 @@ import (
 	"log/slog"
 	"os"
 	"time"
+
+	"github.com/danielbodart/consonos/internal/bridge"
+	"github.com/danielbodart/consonos/internal/pulse"
+	"github.com/danielbodart/consonos/internal/sonos"
 )
 
 var version = "development"
@@ -45,7 +49,7 @@ func main() {
 		},
 	}))
 
-	rootPEM := sonosRootPEM
+	rootPEM := sonos.RootPEM
 	if *rootPath != "" {
 		var err error
 		if rootPEM, err = os.ReadFile(*rootPath); err != nil {
@@ -53,7 +57,7 @@ func main() {
 			os.Exit(2)
 		}
 	}
-	root, err := ParseRootKey(rootPEM)
+	root, err := sonos.ParseRootKey(rootPEM)
 	if err != nil {
 		log.Error("sonos-root", "err", err)
 		os.Exit(2)
@@ -69,23 +73,23 @@ func main() {
 // manager restarts us alongside it. The speaker, which comes and goes with
 // the network, is reconnected to without ending anything.
 func run(sinkName, host string, root *rsa.PublicKey, tone bool, toneHz, toneLevel float64, log *slog.Logger) error {
-	sink, err := OpenSink(sinkName)
+	sink, err := pulse.OpenSink(sinkName)
 	if err != nil {
 		return err
 	}
 
-	var t *Tone
+	var t *pulse.Tone
 	if tone {
-		if t, err = PlayTone(sinkName, toneHz, toneLevel); err != nil {
+		if t, err = pulse.PlayTone(sinkName, toneHz, toneLevel); err != nil {
 			return fmt.Errorf("keep-awake: %w", err)
 		}
 	}
 
-	speaker := NewSpeaker(host, root, log)
-	fromSpeaker := make(chan Level, 16)
-	go speaker.Run(func(l Level) { fromSpeaker <- l })
+	speaker := sonos.NewSpeaker(host, root, log)
+	fromSpeaker := make(chan bridge.Level, 16)
+	go speaker.Run(func(l bridge.Level) { fromSpeaker <- l })
 
-	bridge := NewBridge(sink, speaker, func(msg string, args ...any) { log.Warn(msg, args...) })
+	bridge := bridge.NewBridge(sink, speaker, func(msg string, args ...any) { log.Warn(msg, args...) })
 
 	readSink := func() error {
 		l, err := sink.Level()
@@ -104,9 +108,9 @@ func run(sinkName, host string, root *rsa.PublicKey, tone bool, toneHz, toneLeve
 	defer health.Stop()
 	for {
 		select {
-		case <-sink.closed:
+		case <-sink.Closed():
 			return fmt.Errorf("sound server connection closed")
-		case <-sink.changed:
+		case <-sink.Changed():
 			if err := readSink(); err != nil {
 				return err
 			}

@@ -30,8 +30,8 @@
           ./go.mod
           ./go.sum
           (lib.fileset.fileFilter (file: file.hasExt "go") ./.)
-          ./sonos-root.pem
-          ./testdata
+          ./internal/sonos/root.pem
+          ./internal/sonos/testdata
         ];
       };
     in

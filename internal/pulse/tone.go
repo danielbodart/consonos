@@ -1,4 +1,4 @@
-package main
+package pulse
 
 // Keeps the speaker awake. A Sonos on its optical input powers down after a
 // while without a signal, and loses the start of whatever plays next while it
