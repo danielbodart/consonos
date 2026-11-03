@@ -1,10 +1,13 @@
-# consonos
+<p align="center"><img src="logo.png" alt="consonos" width="600"></p>
 
-*cōnsōnō* — Latin: to sound together, to be in harmony.
+# consonos
 
 A Sonos speaker on a PC's optical (S/PDIF) output, made to behave like the PC's own speakers. Turn the volume up in GNOME, press the volume keys, or mute, and the speaker follows; turn it on the speaker or in the Sonos app, and the PC's slider follows. And the speaker never falls asleep and swallows the first second of the next sound.
 
 A small headless daemon: one static Go binary, no ports opened, nothing to configure beyond which sink and which speaker.
+
+> *Cōnsōnō* is Latin: to sound together, to be in harmony. The PC and the
+> speaker, at one volume.
 
 ## Why
 
