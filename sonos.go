@@ -109,7 +109,11 @@ func (s *Speaker) Run(onLevel func(Level)) {
 }
 
 func (s *Speaker) session(onLevel func(Level)) error {
-	addr := net.JoinHostPort(s.host, sonosPort)
+	ip, err := resolve(s.host)
+	if err != nil {
+		return err
+	}
+	addr := net.JoinHostPort(ip, sonosPort)
 	cfg := s.tlsConfig()
 
 	playerID, err := s.fetchPlayerID(addr, cfg)
@@ -170,6 +174,30 @@ func (s *Speaker) session(onLevel func(Level)) error {
 			onLevel(level)
 		}
 	}
+}
+
+// resolve turns the speaker's name into an address, afresh on every
+// connection so a speaker that moves is followed. The speaker answers 400 to
+// any Host header that is not its own address -- office-sonos.lan is refused
+// where 10.0.0.167 is not, presumably against DNS rebinding -- so it is only
+// ever spoken to by address. IPv4 first, which is what it listens on.
+func resolve(host string) (string, error) {
+	if net.ParseIP(host) != nil {
+		return host, nil
+	}
+	addrs, err := net.LookupHost(host)
+	if err != nil {
+		return "", err
+	}
+	for _, a := range addrs {
+		if ip := net.ParseIP(a); ip != nil && ip.To4() != nil {
+			return a, nil
+		}
+	}
+	if len(addrs) == 0 {
+		return "", fmt.Errorf("%s: no addresses", host)
+	}
+	return addrs[0], nil
 }
 
 // parseVolume picks the playerVolume body out of any message that has one:
