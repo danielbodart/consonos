@@ -25,11 +25,11 @@ consonos makes the speaker's volume *the* volume, and keeps the line from ever g
 
 ## Install
 
-As a flake, with the home-manager module:
+As a flake, with the home-manager module, pinned to a [release](https://github.com/danielbodart/consonos/releases) tag. The package is that release's own static binary, fetched by hash, not a build from source; trunk has no package, only the tags do.
 
 ```nix
 inputs.consonos = {
-  url = "github:danielbodart/consonos";
+  url = "github:danielbodart/consonos/v<VERSION>"; # a release tag, e.g. the latest
   inputs.nixpkgs.follows = "nixpkgs";
 };
 ```
@@ -45,7 +45,7 @@ services.consonos = {
 };
 ```
 
-That runs it as a systemd user service bound to `pipewire-pulse.service`. Use `git+https://github.com/danielbodart/consonos` as the URL if you want `consonos --version` to include the commit count.
+That runs it as a systemd user service bound to `pipewire-pulse.service`.
 
 Without Nix, every green build of trunk is a [release](https://github.com/danielbodart/consonos/releases/latest): a static binary for x64 and arm64, and a systemd user unit.
 

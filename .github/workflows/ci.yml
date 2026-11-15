@@ -26,25 +26,13 @@ jobs:
       - name: Test
         run: ./run test
 
-  # The flake: the package (its build runs the tests) and the home-manager
-  # module's evaluation.
-  nix:
+  # Every architecture's binary, the unit and their checksums, into
+  # dist/release, once: the nix job tests these and the release job
+  # publishes these, so what Nix installs is what was tested.
+  build:
     runs-on: ubuntu-latest
-    steps:
-      # The whole history, so the flake's version has its commit count.
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-      - uses: cachix/install-nix-action@v31
-      - name: Flake check
-        run: nix flake check -L
-
-  release:
-    runs-on: ubuntu-latest
-    needs: [test, nix] # nothing is published unless both pass
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/trunk'
-    permissions:
-      contents: write # create the release and its tag
+    outputs:
+      version: ${{ steps.version.outputs.value }}
     steps:
       # The whole history, because the version's minor is the commit count and
       # the default shallow checkout would make every build claim to be the
@@ -53,16 +41,11 @@ jobs:
         with:
           fetch-depth: 0
       - uses: jdx/mise-action@v4
-
       - name: Version
         id: version
         run: echo "value=$(./run version)" >> "$GITHUB_OUTPUT"
-
-      # Every architecture's binary, the unit and their checksums, into
-      # dist/release.
       - name: Build
         run: ./run release
-
       # A release whose binary disagrees with its tag is worse than none.
       - name: Check the version
         env:
@@ -70,30 +53,144 @@ jobs:
         run: |
           built=$(dist/release/consonos-linux-x64 --version)
           [ "$built" = "$VERSION" ] || { echo "the binary says $built but the release is $VERSION"; exit 1; }
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release
+          path: dist/release/
+          if-no-files-found: error
+
+  # The flake. Its package is a release's binary, not a build from source
+  # (flake.nix says why), and exists only where nix/release.json does, which
+  # on GitHub is a release tag's own commit. So the flake is first checked
+  # as trunk has it (no package, no checks), and then this checkout is made
+  # a release of the binaries the build job made,
+  # scripts/nix-local-release.sh: it writes and stages nix/release.json for
+  # them, as the release job will, and adds each binary to the store at the
+  # path fetchurl would download it to, which is content-addressed, so only
+  # the file whose hash release.json names can stand there and nothing is
+  # fetched. The checks (the package, its --version, the home-manager
+  # module's evaluation) then run on the very binary this run releases.
+  nix:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: cachix/install-nix-action@v31
+      - name: The flake as trunk has it
+        run: nix flake check -L
+      - uses: actions/download-artifact@v8
+        with:
+          name: release
+          path: dist/release
+      - name: This run's binaries as the flake's release
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: scripts/nix-local-release.sh "$VERSION" dist/release
+      - name: The flake as a release has it
+        run: nix flake check -L
+      # aarch64-linux is evaluated, not built: no runner here is one.
+      - name: The other systems, evaluated
+        run: scripts/nix-eval-systems.sh
+
+  # Every green push to trunk is a release. Its assets are what the README's
+  # install snippet and every releases/latest/download link point at, so
+  # their names stay put: consonos-linux-x64, consonos-linux-arm64,
+  # consonos.service and SHA256SUMS.
+  #
+  # THE TAG'S OWN COMMIT. flake.nix's package is the release's binary,
+  # fetched, and a flake fetched as github:danielbodart/consonos/v<V> sees
+  # its commit but not its tag, so the version and each asset's URL and hash
+  # must be in the tagged tree: nix/release.json (scripts/release-json.sh).
+  # It is committed, by github-actions[bot], as a one-commit child of the
+  # released trunk commit, and only the tag v<V> is pushed, pointing at that
+  # child; trunk never gets the commit. A bot commit on origin/trunk would
+  # make every local trunk diverge on every release; a tag on no branch does
+  # not, and cannot race anyone's push to trunk. (Never write the skip
+  # marker, the words skip and ci in square brackets, in a commit message,
+  # even to say it is not needed: GitHub starts no workflow at all for a
+  # push whose head commit's message contains it anywhere.) So the last
+  # release is the tag's parent, not an ancestor tag
+  # (scripts/last-release.sh, which the notes ask).
+  release:
+    runs-on: ubuntu-latest
+    needs: [test, build, nix] # nothing is published unless all pass
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/trunk'
+    permissions:
+      contents: write # push the tag and create the release
+    steps:
+      # fetch-tags, for the last release's tag and the commit it names off
+      # trunk, which the notes start from.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: release
+          path: dist/release
 
       # The plain unit is checked against a real systemd, with the binary
       # where it expects to find it. The runner has no PipeWire, so the
       # pipewire-pulse.service it binds to is stood in for by an empty unit.
       - name: Verify the systemd unit
         run: |
+          chmod +x dist/release/consonos-linux-*
           install -D -m 755 dist/release/consonos-linux-x64 "$HOME/.local/bin/consonos"
           mkdir -p "$HOME/.config/systemd/user"
           printf 'CONSONOS_SINK=sink\nCONSONOS_SPEAKER=speaker\n' > "$HOME/.config/consonos.env"
           printf '[Service]\nExecStart=/bin/true\n' > "$HOME/.config/systemd/user/pipewire-pulse.service"
           systemd-analyze --user verify systemd/consonos.service
 
-      # A re-run has the same run number and so the same version, so the
-      # release may already exist: its assets are replaced rather than the job
-      # failing.
+      # Notes from the commits since the last release, written before this
+      # release's tag exists; on the first, the head commit's message.
+      - name: Release notes
+        run: |
+          if read -r _ prev < <(scripts/last-release.sh); then
+            git log "$prev..$GITHUB_SHA" --pretty='- %s (%h)' > notes.md
+          else
+            git log -1 --format=%B "$GITHUB_SHA" > notes.md
+          fi
+
+      # The tag, on its own commit (see the top of this job): nix/release.json
+      # for the binaries built above, committed on a detached HEAD whose
+      # parent is the commit this run tested, and only the tag pushed. A
+      # re-run has the same run number and so the same version: its tag is
+      # already there, and is never moved, so the re-run's release.json must
+      # be the one the tag holds (the build is reproducible), or the release
+      # would carry binaries its tag's hashes do not match.
+      - name: Tag v<V> on a child commit holding nix/release.json
+        env:
+          V: ${{ needs.build.outputs.version }}
+        run: |
+          scripts/release-json.sh "$V" dist/release/SHA256SUMS > release.json
+          cat release.json
+          if git rev-parse -q --verify "refs/tags/v$V" >/dev/null; then
+            git show "v$V:nix/release.json" | diff -u - release.json
+            exit 0
+          fi
+          git checkout -q --detach "$GITHUB_SHA"
+          mkdir -p nix
+          mv release.json nix/release.json
+          git add nix/release.json
+          git -c user.name="github-actions[bot]" \
+              -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit -q -m "Release v$V" \
+              -m "nix/release.json, for flake.nix: the release's version and each binary's URL and hash. This commit is on no branch; only the tag v$V names it."
+          git tag "v$V"
+          git push -q origin "refs/tags/v$V"
+
+      # The release, on the tag just pushed (--verify-tag: never one GitHub
+      # would make itself, on trunk). A re-run's release may already exist:
+      # its assets are replaced, identical, rather than the job failing.
       - name: Publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ steps.version.outputs.value }}
+          V: ${{ needs.build.outputs.version }}
         run: |
-          tag="v$VERSION"
+          tag="v$V"
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release upload "$tag" dist/release/* --clobber
           else
-            git log -1 --format=%B "$GITHUB_SHA" > notes.md
-            gh release create "$tag" dist/release/* --target "$GITHUB_SHA" --title "$tag" --latest --notes-file notes.md
+            gh release create "$tag" dist/release/* --verify-tag --title "$tag" --latest --notes-file notes.md
           fi
