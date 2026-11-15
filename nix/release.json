@@ -1,0 +1,13 @@
+{
+  "version": "0.9.9",
+  "assets": {
+    "x86_64-linux": {
+      "url": "https://github.com/danielbodart/consonos/releases/download/v0.9.9/consonos-linux-x64",
+      "hash": "sha256-N+7EtlNOEb/gDqFtiZCohozHCiBj8WSmf/Pc+D8jtr4="
+    },
+    "aarch64-linux": {
+      "url": "https://github.com/danielbodart/consonos/releases/download/v0.9.9/consonos-linux-arm64",
+      "hash": "sha256-L/GOLJScq48Va1StYvK1STowpvReTvMz93U5evOJcCA="
+    }
+  }
+}
