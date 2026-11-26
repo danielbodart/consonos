@@ -58,18 +58,22 @@ func NewBridge(sink, speaker Side, log func(string, ...any)) *Bridge {
 	return &Bridge{sink: sink, speaker: speaker, log: log, toSink: echoes{}, toSpeaker: echoes{}}
 }
 
-// FromSink handles the sink reporting l.
-func (b *Bridge) FromSink(l Level, now time.Time) {
+// FromSink handles the sink reporting l, and says whether the PC changed it:
+// not an echo of following the speaker, not the first reading, and not the
+// same level reported again because some other sink changed.
+func (b *Bridge) FromSink(l Level, now time.Time) (changedByPC bool) {
 	if b.toSink.isEcho(l, now) {
 		b.sinkLevel = &l
-		return
+		return false
 	}
+	changedByPC = b.sinkLevel != nil && *b.sinkLevel != l
 	b.sinkLevel = &l
 	// Until the speaker has been heard from, it has the say.
 	if b.speakerLevel == nil || *b.speakerLevel == l {
-		return
+		return changedByPC
 	}
 	b.push(b.speaker, b.speakerLevel, l, b.toSpeaker, now, "speaker")
+	return changedByPC
 }
 
 // FromSpeaker handles the speaker reporting l.

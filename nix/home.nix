@@ -25,6 +25,7 @@ let
     (toString cfg.keepAwake.hz)
     "-keep-awake-level"
     (toString cfg.keepAwake.level)
+    "-switch-input=${lib.boolToString cfg.switchInput}"
   ];
 in
 {
@@ -51,6 +52,17 @@ in
       type = lib.types.str;
       example = "sonos-arc.local";
       description = "Host name or address of the Sonos speaker.";
+    };
+
+    switchInput = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = ''
+        Put the speaker back on its TV input when the sink's volume or mute
+        is changed on the PC, or the sink becomes the default output. A Sonos
+        leaves that input for anything played on it from the app or AirPlay,
+        and does not come back by itself while the line stays live.
+      '';
     };
 
     keepAwake = {

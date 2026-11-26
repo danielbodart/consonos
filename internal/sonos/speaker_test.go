@@ -99,3 +99,56 @@ func TestCheckLeafRejects(t *testing.T) {
 		t.Error("accepted a different speaker than the one first reached")
 	}
 }
+
+// As the Ray answers getMetadataStatus: on its optical input, and stopped on
+// an empty queue after the app played on it.
+const (
+	onTV       = `[{"namespace":"playbackMetadata:1","groupId":"RINCON_F0F6C1F09AA401400:1754745573","response":"getMetadataStatus","success":true,"type":"metadataStatus","cmdId":"7"},{"_objectType":"metadataStatus","container":{"_objectType":"container","name":"TV Audio","type":"linein.homeTheater.spdif","id":{"_objectType":"universalMusicObjectId","objectId":"homeTheater-input"},"images":[]}}]`
+	offTV      = `[{"namespace":"playbackMetadata:1","response":"getMetadataStatus","success":true,"type":"metadataStatus","cmdId":"8"},{"_objectType":"metadataStatus","container":{"_objectType":"container","images":[]}}]`
+	notCapable = `[{"namespace":"playback:1","response":"loadLineIn","success":false,"type":"globalError","cmdId":"9"},{"_objectType":"globalError","errorCode":"ERROR_NOT_CAPABLE","reason":"player does not have line-in"}]`
+)
+
+func TestTVInputFromMetadata(t *testing.T) {
+	body, err := parseReply([]byte(onTV))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := containerType(body); got != "linein.homeTheater.spdif" || !isTVInput(got) {
+		t.Fatalf("on TV read as %q", got)
+	}
+	body, err = parseReply([]byte(offTV))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := containerType(body); got != "" || isTVInput(got) {
+		t.Fatalf("off TV read as %q", got)
+	}
+}
+
+func TestParseReplyCarriesTheSpeakersReason(t *testing.T) {
+	_, err := parseReply([]byte(notCapable))
+	if err == nil || err.Error() != "loadLineIn: ERROR_NOT_CAPABLE: player does not have line-in" {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+// An answer goes to the request waiting on its cmdId; anything else, such as
+// a pushed volume event, is left for the read loop.
+func TestDeliverMatchesCmdID(t *testing.T) {
+	s := NewSpeaker("speaker", nil, nil)
+	reply := make(chan []byte, 1)
+	s.pending["7"] = reply
+	if s.deliver([]byte(offTV)) {
+		t.Fatal("cmdId 8 delivered to 7")
+	}
+	if !s.deliver([]byte(onTV)) || string(<-reply) != onTV {
+		t.Fatal("cmdId 7 not delivered")
+	}
+	if s.deliver([]byte(onTV)) {
+		t.Fatal("delivered twice")
+	}
+	event := `[{"namespace":"playerVolume:1","name":"playerVolume","type":"playerVolume"},{"_objectType":"playerVolume","volume":26,"muted":false,"fixed":false}]`
+	if s.deliver([]byte(event)) {
+		t.Fatal("event taken as an answer")
+	}
+}

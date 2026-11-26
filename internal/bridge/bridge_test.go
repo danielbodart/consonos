@@ -124,3 +124,28 @@ func TestMuteBothWays(t *testing.T) {
 		t.Fatalf("sink still muted")
 	}
 }
+
+// Only a change made on the PC says the PC is being listened to: not the
+// first reading, not a sink event that left this sink as it was, and not the
+// echo of the sink following the speaker.
+func TestFromSinkSaysWhenThePCChangedIt(t *testing.T) {
+	b, _, _ := newTestBridge()
+	if b.FromSink(Level{Volume: 30}, t0) {
+		t.Fatal("first reading counted as a change")
+	}
+	b.FromSpeaker(Level{Volume: 30}, t0)
+	if b.FromSink(Level{Volume: 30}, t0) {
+		t.Fatal("unchanged level counted as a change")
+	}
+	if !b.FromSink(Level{Volume: 31}, t0) {
+		t.Fatal("volume change not counted")
+	}
+	if !b.FromSink(Level{Volume: 31, Muted: true}, t0) {
+		t.Fatal("mute not counted")
+	}
+	b.FromSpeaker(Level{Volume: 31, Muted: true}, t0)     // echo
+	b.FromSpeaker(Level{Volume: 20}, t0.Add(time.Second)) // turned on the speaker
+	if b.FromSink(Level{Volume: 20}, t0.Add(time.Second)) {
+		t.Fatal("the sink following the speaker counted as a change")
+	}
+}

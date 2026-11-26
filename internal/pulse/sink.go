@@ -25,8 +25,9 @@ type Sink struct {
 	closed  chan struct{}
 }
 
-// OpenSink connects and subscribes to sink changes. changed receives a signal
-// (coalesced) whenever any sink changes; closed is closed if the server goes.
+// OpenSink connects and subscribes to sink and server changes. changed
+// receives a signal (coalesced) whenever any sink changes or the default sink
+// does; closed is closed if the server goes.
 func OpenSink(name string) (*Sink, error) {
 	c, conn, err := proto.Connect("")
 	if err != nil {
@@ -43,7 +44,7 @@ func OpenSink(name string) (*Sink, error) {
 	c.Callback = func(msg any) {
 		switch msg := msg.(type) {
 		case *proto.SubscribeEvent:
-			if msg.Event&proto.EventFacilityMask == proto.EventSink {
+			if f := msg.Event & proto.EventFacilityMask; f == proto.EventSink || f == proto.EventServer {
 				select {
 				case s.changed <- struct{}{}:
 				default:
@@ -61,14 +62,15 @@ func OpenSink(name string) (*Sink, error) {
 		conn.Close()
 		return nil, err
 	}
-	if err := c.Request(&proto.Subscribe{Mask: proto.SubscriptionMaskSink}, nil); err != nil {
+	if err := c.Request(&proto.Subscribe{Mask: proto.SubscriptionMaskSink | proto.SubscriptionMaskServer}, nil); err != nil {
 		conn.Close()
 		return nil, err
 	}
 	return s, nil
 }
 
-// Changed signals, coalesced, whenever any sink changes.
+// Changed signals, coalesced, whenever any sink changes or the default sink
+// does.
 func (s *Sink) Changed() <-chan struct{} { return s.changed }
 
 // Closed is closed when the sound server's connection goes.
@@ -80,6 +82,16 @@ func (s *Sink) info() (*proto.GetSinkInfoReply, error) {
 		return nil, fmt.Errorf("sink %s: %w", s.name, err)
 	}
 	return &info, nil
+}
+
+// IsDefault reports whether the sink is the default output: where the volume
+// keys, and every app left on "Default", send their sound.
+func (s *Sink) IsDefault() (bool, error) {
+	var info proto.GetServerInfoReply
+	if err := s.c.Request(&proto.GetServerInfo{}, &info); err != nil {
+		return false, err
+	}
+	return info.DefaultSinkName == s.name, nil
 }
 
 // Level is the sink's volume as the percentage GNOME shows, and its mute.

@@ -1,8 +1,8 @@
 # The home-manager module, evaluated against just the options it sets, so the
 # check needs no home-manager input: the service runs this flake's binary
 # with the sink and speaker it was given, a disabled keep-awake reaches the
-# binary as one argument Go reads as false, it comes and goes with the sound
-# server, and nothing is set when it is off.
+# binary as one argument Go reads as false, as does switching the input off,
+# it comes and goes with the sound server, and nothing is set when it is off.
 {
   pkgs,
   lib,
@@ -47,6 +47,12 @@ let
     speaker = "office-sonos.lan";
     keepAwake.enable = false;
   };
+  manual = eval {
+    enable = true;
+    inherit sink;
+    speaker = "office-sonos.lan";
+    switchInput = false;
+  };
   off = eval { };
 
   package = self.packages.${pkgs.stdenv.hostPlatform.system}.default;
@@ -55,6 +61,8 @@ let
 in
 assert lib.assertMsg (lib.hasPrefix "${package}/bin/consonos -sink ${sink} -speaker office-sonos.lan '-keep-awake=true' " exec) "service runs ${exec}";
 assert lib.assertMsg (lib.hasInfix " '-keep-awake=false' " quiet.systemd.user.services.consonos.Service.ExecStart) "keep-awake off runs ${quiet.systemd.user.services.consonos.Service.ExecStart}";
+assert lib.assertMsg (lib.hasSuffix " '-switch-input=true'" exec) "switch-input on runs ${exec}";
+assert lib.assertMsg (lib.hasSuffix " '-switch-input=false'" manual.systemd.user.services.consonos.Service.ExecStart) "switch-input off runs ${manual.systemd.user.services.consonos.Service.ExecStart}";
 assert lib.assertMsg (unit.Unit.BindsTo == [ "pipewire-pulse.service" ]) "not bound to pipewire-pulse";
 assert lib.assertMsg (unit.Service.Restart == "always") "not restarted";
 assert lib.assertMsg (on.home.packages == [ package ]) "packages ${toString on.home.packages}";

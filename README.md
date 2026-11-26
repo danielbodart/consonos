@@ -21,6 +21,7 @@ consonos makes the speaker's volume *the* volume, and keeps the line from ever g
 - **The speaker side** is the Sonos local control API: a WebSocket at `wss://<speaker>:1443/websocket/api`. consonos subscribes to the speaker's volume, so the speaker pushes every change — whoever made it — down the same connection consonos sends its own changes on. Outbound only: nothing listens on the PC.
 - **The two are kept equal.** Whichever side last changed is the one the other follows. Volume maps 1:1: 35% in GNOME is 35 on the speaker. Each side echoes what it is told, so a report matching a value recently sent is taken as the echo and not passed back, which is what lets a slider be dragged quickly without being dragged back.
 - **On connecting and reconnecting, the speaker wins.** It is the thing in the room, and it may have been turned while consonos was not watching. The speaker reconnects on its own with backoff; consonos exits only if the sound server goes, and the service manager restarts it.
+- **Back to the TV input.** A Sonos leaves its TV input when something plays on it from the Sonos app or AirPlay, and stays on that source, stopped, when it ends. It switches back by itself only when the TV "comes on", and with the line always live it never sees that. So when the sink's volume or mute is changed on the PC, or the sink becomes the default output, consonos asks the speaker what it is playing from. If that is not the TV input, it switches to it. Using the PC's speakers is the choice to hear the PC. The sink following a change made on the speaker does not count, so turning the speaker while it plays from the app leaves it be. `-switch-input=false` turns this off.
 - **Keep-awake**: a 20 Hz sine at 0.001 of full scale (−60 dBFS) is played to the sink for as long as consonos runs. Too low and too quiet to hear, but a signal on the line, so the speaker never sees silence. The stream is pinned to the sink, so it is not moved when the default output changes.
 
 ## Install
@@ -42,6 +43,7 @@ services.consonos = {
   sink = "alsa_output.pci-0000_00_1f.3.iec958-stereo";
   speaker = "sonos-arc.local";
   # keepAwake = { enable = true; hz = 20; level = 0.001; };
+  # switchInput = true;
 };
 ```
 
@@ -96,6 +98,7 @@ then `systemctl --user restart wireplumber`.
 | `-keep-awake` | `true` | Play the inaudible tone; `-keep-awake=false` to turn it off |
 | `-keep-awake-hz` | `20` | Its frequency |
 | `-keep-awake-level` | `0.001` | Its amplitude, as a fraction of full scale |
+| `-switch-input` | `true` | Put the speaker back on its TV input when the PC's volume or mute changes, or the sink becomes the default; `-switch-input=false` to turn it off |
 | `-sonos-root` | *(built in)* | A PEM public key to verify the speaker's certificate with, in place of the Sonos device root |
 | `--version` | | Print the version and exit |
 
@@ -105,7 +108,7 @@ Logs go to stderr without timestamps, for journald: `journalctl --user -u conson
 
 - **The Sonos root key was recovered, not published.** A speaker sends only its own certificate, and Sonos does not publish the "Sonos Device Authentication Root CA" that signs it. consonos verifies each speaker's certificate signature against that root's public key, which was worked out from the signatures of four speakers' certificates; see [docs/sonos-root.md](docs/sonos-root.md). It also checks that the certificate is in date, that it names the device the speaker says it is, and that it is the same device on every reconnect. `-sonos-root` takes a different key, should Sonos ever change theirs.
 - **The API key is the public one.** The local API wants an `X-Sonos-Api-Key`; consonos sends the one Home Assistant's [sonos-websocket](https://github.com/jjlawren/sonos-websocket) uses. It identifies the kind of client rather than authorising anything.
-- **One sink, one speaker.** Grouped speakers are not handled; the volume is the player's own, not the group's.
+- **One sink, one speaker.** Grouped speakers are not handled; the volume is the player's own, not the group's. Switching to the TV input takes the speaker out of any group it is in.
 
 ## Prior art
 
